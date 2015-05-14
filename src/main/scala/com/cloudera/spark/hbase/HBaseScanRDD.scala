@@ -1,5 +1,7 @@
 package com.cloudera.spark.hbase
 
+
+import org.apache.hadoop.hbase.CellUtil
 import org.apache.spark.deploy.SparkHadoopUtil
 import org.apache.spark.{ SparkContext, TaskContext }
 import org.apache.spark.broadcast.Broadcast
@@ -34,7 +36,7 @@ class HBaseScanRDD(sc: SparkContext,
   with Logging {
 
   ///
-  @transient val jobTransient = new Job(configBroadcast.value.value, "ExampleRead");
+  @transient val jobTransient = Job.getInstance(configBroadcast.value.value, "ExampleRead");
   TableMapReduceUtil.initTableMapperJob(
     tableName, // input HBase table name
     scan, // Scan instance to control CF and attribute selection
@@ -43,7 +45,7 @@ class HBaseScanRDD(sc: SparkContext,
     null, // mapper output value
     jobTransient);
 
-  @transient val jobConfigurationTrans = jobTransient.getConfiguration()
+  @transient val jobConfigurationTrans = jobTransient.getConfiguration
   jobConfigurationTrans.set(TableInputFormat.INPUT_TABLE, tableName)
   val jobConfigBroadcast = sc.broadcast(new SerializableWritable(jobConfigurationTrans))
   ////
@@ -112,13 +114,13 @@ class HBaseScanRDD(sc: SparkContext,
         }
         havePair = false
 
-        val it = reader.getCurrentValue.list().iterator()
+        val it = reader.getCurrentValue.listCells().iterator()
 
         val list = new ArrayList[(Array[Byte], Array[Byte], Array[Byte])]()
 
         while (it.hasNext()) {
           val kv = it.next()
-          list.add((kv.getFamily(), kv.getQualifier(), kv.getValue()))
+          list.add((CellUtil.cloneFamily(kv), CellUtil.cloneQualifier(kv),CellUtil.cloneValue(kv)))
         }
         (reader.getCurrentKey.copyBytes(), list)
       }
@@ -137,9 +139,9 @@ class HBaseScanRDD(sc: SparkContext,
   def addCreds {
     val creds = SparkHadoopUtil.get.getCurrentUserCredentials()
 
-    val ugi = UserGroupInformation.getCurrentUser();
+    val ugi = UserGroupInformation.getCurrentUser()
     ugi.addCredentials(creds)
-    // specify that this is a proxy user 
+    // specify that this is a proxy user
     ugi.setAuthenticationMethod(AuthenticationMethod.PROXY)
   }
 

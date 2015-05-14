@@ -5,7 +5,7 @@ import org.apache.hadoop.conf.Configuration
 import org.apache.spark.api.java.JavaRDD
 import org.apache.spark.api.java.function.VoidFunction
 import org.apache.spark.api.java.function.Function
-import org.apache.hadoop.hbase.client.HConnection
+import org.apache.hadoop.hbase.client.Connection
 import org.apache.spark.streaming.api.java.JavaDStream
 import org.apache.spark.api.java.function.FlatMapFunction
 import scala.collection.JavaConversions._
@@ -19,9 +19,9 @@ import org.apache.hadoop.hbase.io.ImmutableBytesWritable
 import scala.reflect.ClassTag
 
 class JavaHBaseContext(@transient jsc: JavaSparkContext,
-  @transient config: Configuration) extends Serializable {
+                       @transient config: Configuration) extends Serializable {
   val hbc = new HBaseContext(jsc.sc, config)
-  
+
   /**
    * A simple enrichment of the traditional Spark javaRdd foreachPartition.
    * This function differs from the original in that it offers the
@@ -36,23 +36,23 @@ class JavaHBaseContext(@transient jsc: JavaSparkContext,
    *                with HBase
    */
   def foreachPartition[T](javaRdd: JavaRDD[T],
-    f: VoidFunction[(java.util.Iterator[T], HConnection)] ) = {
-    
-    hbc.foreachPartition(javaRdd.rdd, 
-        (iterator:Iterator[T], hConnection) => 
-          { f.call((iterator, hConnection))})
-  } 
-  
-  def foreach[T](javaRdd: JavaRDD[T],
-    f: VoidFunction[(T, HConnection)] ) = {
-    
-    hbc.foreachPartition(javaRdd.rdd, 
-        (iterator:Iterator[T], hConnection) =>
-          iterator.foreach(a => f.call((a, hConnection))))
-          
-          //{ f.call((iterator, hConnection))})
+                          f: VoidFunction[(java.util.Iterator[T], Connection)] ) = {
+
+    hbc.foreachPartition(javaRdd.rdd,
+      (iterator:Iterator[T], hConnection) =>
+      { f.call((iterator, hConnection))})
   }
-  
+
+  def foreach[T](javaRdd: JavaRDD[T],
+                 f: VoidFunction[(T, Connection)] ) = {
+
+    hbc.foreachPartition(javaRdd.rdd,
+      (iterator:Iterator[T], hConnection) =>
+        iterator.foreach(a => f.call((a, hConnection))))
+
+    //{ f.call((iterator, hConnection))})
+  }
+
   /**
    * A simple enrichment of the traditional Spark Streaming dStream foreach
    * This function differs from the original in that it offers the
@@ -67,11 +67,11 @@ class JavaHBaseContext(@transient jsc: JavaSparkContext,
    *                    interact with HBase
    */
   def foreachRDD[T](javaDstream: JavaDStream[T],
-    f: VoidFunction[(Iterator[T], HConnection)]) = {
-    hbc.foreachRDD(javaDstream.dstream, (it:Iterator[T], hc: HConnection) => f.call(it, hc))
+                    f: VoidFunction[(Iterator[T], Connection)]) = {
+    hbc.foreachRDD(javaDstream.dstream, (it:Iterator[T], hc: Connection) => f.call(it, hc))
   }
-  
-    /**
+
+  /**
    * A simple enrichment of the traditional Spark JavaRDD mapPartition.
    * This function differs from the original in that it offers the
    * developer access to a already connected HConnection object
@@ -90,19 +90,19 @@ class JavaHBaseContext(@transient jsc: JavaSparkContext,
    *                function just like normal mapPartition
    */
   def mapPartition[T,R](javaRdd: JavaRDD[T],
-    mp: FlatMapFunction[(java.util.Iterator[T], HConnection),R] ): JavaRDD[R] = {
-     
-    def fn = (x: Iterator[T], hc: HConnection) => 
+                        mp: FlatMapFunction[(java.util.Iterator[T], Connection),R] ): JavaRDD[R] = {
+
+    def fn = (x: Iterator[T], hc: Connection) =>
       asScalaIterator(
-          mp.call((asJavaIterator(x), hc)).iterator()
-        )
-    
-    JavaRDD.fromRDD(hbc.mapPartition(javaRdd.rdd, 
-        (iterator:Iterator[T], hConnection:HConnection) => 
-          fn(iterator, hConnection))(fakeClassTag[R]))(fakeClassTag[R])
-  }  
-  
-    /**
+        mp.call((asJavaIterator(x), hc)).iterator()
+      )
+
+    JavaRDD.fromRDD(hbc.mapPartition(javaRdd.rdd,
+      (iterator:Iterator[T], hConnection:Connection) =>
+        fn(iterator, hConnection))(fakeClassTag[R]))(fakeClassTag[R])
+  }
+
+  /**
    * A simple enrichment of the traditional Spark Streaming JavaDStream
    * mapPartition.
    *
@@ -123,12 +123,12 @@ class JavaHBaseContext(@transient jsc: JavaSparkContext,
    *                    definition function just like normal mapPartition
    */
   def streamMap[T, U](javaDstream: JavaDStream[T],
-      mp: Function[(Iterator[T], HConnection), Iterator[U]]): JavaDStream[U] = {
-    JavaDStream.fromDStream(hbc.streamMap(javaDstream.dstream, 
-        (it: Iterator[T], hc: HConnection) => 
-         mp.call(it, hc) )(fakeClassTag[U]))(fakeClassTag[U])
+                      mp: Function[(Iterator[T], Connection), Iterator[U]]): JavaDStream[U] = {
+    JavaDStream.fromDStream(hbc.streamMap(javaDstream.dstream,
+      (it: Iterator[T], hc: Connection) =>
+        mp.call(it, hc) )(fakeClassTag[U]))(fakeClassTag[U])
   }
-  
+
   /**
    * A simple abstraction over the HBaseContext.foreachPartition method.
    *
@@ -139,18 +139,18 @@ class JavaHBaseContext(@transient jsc: JavaSparkContext,
    *
    * @param javaRdd   Original JavaRDD with data to iterate over
    * @param tableName The name of the table to put into
-   * @param f         Function to convert a value in the JavaRDD 
+   * @param f         Function to convert a value in the JavaRDD
    *                  to a HBase Put
    * @param autoFlush If autoFlush should be turned on
    */
   def bulkPut[T](javaRdd: JavaRDD[T],
-      tableName: String, 
-      f: Function[(T), Put], 
-      autoFlush: Boolean) {
-    
+                 tableName: String,
+                 f: Function[(T), Put],
+                 autoFlush: Boolean) {
+
     hbc.bulkPut(javaRdd.rdd, tableName, (t:T) => f.call(t), autoFlush)
   }
-  
+
   /**
    * A simple abstraction over the HBaseContext.streamMapPartition method.
    *
@@ -162,18 +162,18 @@ class JavaHBaseContext(@transient jsc: JavaSparkContext,
    *
    * @param javaDstream Original DStream with data to iterate over
    * @param tableName   The name of the table to put into
-   * @param f           Function to convert a value in 
+   * @param f           Function to convert a value in
    *                    the JavaDStream to a HBase Put
    * @param autoFlush         If autoFlush should be turned on
    */
   def streamBulkPut[T](javaDstream: JavaDStream[T],
-      tableName: String,
-      f: Function[T,Put],
-      autoFlush: Boolean) = {
-    hbc.streamBulkPut(javaDstream.dstream, 
-        tableName, 
-        (t:T) => f.call(t),
-        autoFlush)
+                       tableName: String,
+                       f: Function[T,Put],
+                       autoFlush: Boolean) = {
+    hbc.streamBulkPut(javaDstream.dstream,
+      tableName,
+      (t:T) => f.call(t),
+      autoFlush)
   }
 
   /**
@@ -186,18 +186,18 @@ class JavaHBaseContext(@transient jsc: JavaSparkContext,
    *
    * @param javaRdd       Original RDD with data to iterate over
    * @param tableName The name of the table to put into
-   * @param f         Function to convert a value in the RDD to 
+   * @param f         Function to convert a value in the RDD to
    *                  a HBase checkAndPut
    * @param autoFlush If autoFlush should be turned on
    */
-  def bulkCheckAndPut[T](javaRdd: JavaRDD[T], 
-      tableName: String, 
-      f: Function[T,(Array[Byte], Array[Byte], Array[Byte], Array[Byte], Put)], 
-      autoFlush: Boolean) {
-    
+  def bulkCheckAndPut[T](javaRdd: JavaRDD[T],
+                         tableName: String,
+                         f: Function[T,(Array[Byte], Array[Byte], Array[Byte], Array[Byte], Put)],
+                         autoFlush: Boolean) {
+
     hbc.bulkCheckAndPut(javaRdd.rdd, tableName, (t:T) => f.call(t), autoFlush)
   }
-  
+
   /**
    * A simple abstraction over the HBaseContext.foreachPartition method.
    *
@@ -214,16 +214,16 @@ class JavaHBaseContext(@transient jsc: JavaSparkContext,
    * @param batchSize       The number of increments to batch before sending to HBase
    */
   def bulkIncrement[T](javaRdd: JavaRDD[T], tableName: String,
-      f: Function[T,Increment], batchSize:Integer) {
+                       f: Function[T,Increment], batchSize:Integer) {
     hbc.bulkIncrement(javaRdd.rdd, tableName, (t:T) => f.call(t), batchSize)
   }
-  
+
   /**
    * A simple abstraction over the HBaseContext.foreachPartition method.
    *
-   * It allow addition support for a user to take a JavaRDD and 
-   * generate delete and send them to HBase.  
-   * 
+   * It allow addition support for a user to take a JavaRDD and
+   * generate delete and send them to HBase.
+   *
    * The complexity of managing the HConnection is
    * removed from the developer
    *
@@ -234,10 +234,10 @@ class JavaHBaseContext(@transient jsc: JavaSparkContext,
    * @param batchSize       The number of delete to batch before sending to HBase
    */
   def bulkDelete[T](javaRdd: JavaRDD[T], tableName: String,
-      f: Function[T, Delete], batchSize:Integer) {
+                    f: Function[T, Delete], batchSize:Integer) {
     hbc.bulkDelete(javaRdd.rdd, tableName, (t:T) => f.call(t), batchSize)
   }
-  
+
   /**
    * A simple abstraction over the HBaseContext.streamBulkMutation method.
    *
@@ -254,14 +254,14 @@ class JavaHBaseContext(@transient jsc: JavaSparkContext,
    * @param batchSize         The number of increments to batch before sending to HBase
    */
   def streamBulkIncrement[T](javaDstream: JavaDStream[T],
-      tableName: String,
-      f: Function[T, Increment],
-      batchSize: Integer) = {
+                             tableName: String,
+                             f: Function[T, Increment],
+                             batchSize: Integer) = {
     hbc.streamBulkIncrement(javaDstream.dstream, tableName,
-        (t:T) => f.call(t),
-        batchSize)
+      (t:T) => f.call(t),
+      batchSize)
   }
-  
+
   /**
    * A simple abstraction over the HBaseContext.streamBulkMutation method.
    *
@@ -277,15 +277,15 @@ class JavaHBaseContext(@transient jsc: JavaSparkContext,
    *                    HBase Delete
    */
   def streamBulkDelete[T](javaDstream: JavaDStream[T],
-      tableName: String,
-      f: Function[T, Delete],
-      batchSize: Integer) = {
+                          tableName: String,
+                          f: Function[T, Delete],
+                          batchSize: Integer) = {
     hbc.streamBulkDelete(javaDstream.dstream, tableName,
-        (t:T) => f.call(t),
-        batchSize)
+      (t:T) => f.call(t),
+      batchSize)
   }
-  
-  
+
+
   /**
    * A simple abstraction over the bulkCheckDelete method.
    *
@@ -301,12 +301,12 @@ class JavaHBaseContext(@transient jsc: JavaSparkContext,
    *                   HBase Delete
    */
   def streamBulkCheckAndDelete[T](javaDstream: JavaDStream[T],
-      tableName: String,
-      f: Function[T, (Array[Byte], Array[Byte], Array[Byte], Array[Byte], Delete)]) = {
+                                  tableName: String,
+                                  f: Function[T, (Array[Byte], Array[Byte], Array[Byte], Array[Byte], Delete)]) = {
     hbc.streamBulkCheckAndDelete(javaDstream.dstream, tableName,
-        (t:T) => f.call(t))
+      (t:T) => f.call(t))
   }
-  
+
   /**
    * A simple abstraction over the HBaseContext.mapPartition method.
    *
@@ -323,17 +323,17 @@ class JavaHBaseContext(@transient jsc: JavaSparkContext,
    * return           new JavaRDD that is created by the Get to HBase
    */
   def bulkGet[T, U](tableName: String,
-      batchSize:Integer,
-      javaRdd: JavaRDD[T],
-      makeGet: Function[T, Get],
-      convertResult: Function[Result, U]): JavaRDD[U] = {
+                    batchSize:Integer,
+                    javaRdd: JavaRDD[T],
+                    makeGet: Function[T, Get],
+                    convertResult: Function[Result, U]): JavaRDD[U] = {
     JavaRDD.fromRDD(hbc.bulkGet(tableName,
-        batchSize,
-        javaRdd.rdd,
-        (t:T) => makeGet.call(t),
-        (r:Result) => {convertResult.call(r)}))(fakeClassTag[U])
+      batchSize,
+      javaRdd.rdd,
+      (t:T) => makeGet.call(t),
+      (r:Result) => {convertResult.call(r)}))(fakeClassTag[U])
   }
-  
+
   /**
    * A simple abstraction over the HBaseContext.streamMap method.
    *
@@ -351,17 +351,17 @@ class JavaHBaseContext(@transient jsc: JavaSparkContext,
    * return               new JavaDStream that is created by the Get to HBase
    */
   def streamBulkGet[T, U](tableName:String,
-      batchSize:Integer,
-      javaDStream: JavaDStream[T],
-      makeGet: Function[T, Get], 
-      convertResult: Function[Result, U]) {
+                          batchSize:Integer,
+                          javaDStream: JavaDStream[T],
+                          makeGet: Function[T, Get],
+                          convertResult: Function[Result, U]) {
     JavaDStream.fromDStream(hbc.streamBulkGet(tableName,
-        batchSize,
-        javaDStream.dstream,
-        (t:T) => makeGet.call(t),
-        (r:Result) => convertResult.call(r) )(fakeClassTag[U]))(fakeClassTag[U])
+      batchSize,
+      javaDStream.dstream,
+      (t:T) => makeGet.call(t),
+      (r:Result) => convertResult.call(r) )(fakeClassTag[U]))(fakeClassTag[U])
   }
-   
+
   /**
    * This function will use the native HBase TableInputFormat with the
    * given scan object to generate a new JavaRDD
@@ -372,17 +372,17 @@ class JavaHBaseContext(@transient jsc: JavaSparkContext,
    *                   what the user wants in the final generated JavaRDD
    *  @return          new JavaRDD with results from scan
    */
-  def hbaseRDD[U](tableName: String, 
-      scans: Scan,
-      f: Function[(ImmutableBytesWritable, Result), U]): 
-      JavaRDD[U] = {
+  def hbaseRDD[U](tableName: String,
+                  scans: Scan,
+                  f: Function[(ImmutableBytesWritable, Result), U]):
+  JavaRDD[U] = {
     JavaRDD.fromRDD(
-        hbc.hbaseRDD[U](tableName, 
-            scans, 
-            (v:(ImmutableBytesWritable, Result)) => 
-              f.call(v._1, v._2))(fakeClassTag[U]))(fakeClassTag[U])
-  } 
-  
+      hbc.hbaseRDD[U](tableName,
+        scans,
+        (v:(ImmutableBytesWritable, Result)) =>
+          f.call(v._1, v._2))(fakeClassTag[U]))(fakeClassTag[U])
+  }
+
   /**
    * A overloaded version of HBaseContext hbaseRDD that predefines the
    * type of the outputing JavaRDD
@@ -392,8 +392,8 @@ class JavaHBaseContext(@transient jsc: JavaSparkContext,
    *  @return New JavaRDD with results from scan
    *
    */
-  def hbaseRDD(tableName: String, 
-      scans: Scan): JavaRDD[(Array[Byte], java.util.List[(Array[Byte], Array[Byte], Array[Byte])])] = {
+  def hbaseRDD(tableName: String,
+               scans: Scan): JavaRDD[(Array[Byte], java.util.List[(Array[Byte], Array[Byte], Array[Byte])])] = {
     JavaRDD.fromRDD(hbc.hbaseRDD(tableName, scans))
   }
 
@@ -410,6 +410,4 @@ class JavaHBaseContext(@transient jsc: JavaSparkContext,
    */
   private[spark]
   def fakeClassTag[T]: ClassTag[T] = ClassTag.AnyRef.asInstanceOf[ClassTag[T]]
-
-
 }
