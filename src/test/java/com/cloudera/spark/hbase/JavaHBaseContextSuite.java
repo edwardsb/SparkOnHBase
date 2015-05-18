@@ -3,15 +3,14 @@ package com.cloudera.spark.hbase;
 import java.io.File;
 import java.io.Serializable;
 
-import com.cloudera.spark.hbase.example.JavaHBaseBulkDeleteExample.DeleteFunction;
-import com.cloudera.spark.hbase.example.JavaHBaseBulkIncrementExample.IncrementFunction;
-
 import java.util.*;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.HBaseTestingUtility;
 import org.apache.hadoop.hbase.KeyValue;
+import org.apache.hadoop.hbase.client.Delete;
 import org.apache.hadoop.hbase.client.Get;
+import org.apache.hadoop.hbase.client.Increment;
 import org.apache.hadoop.hbase.client.Put;
 import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.client.Scan;
@@ -226,6 +225,32 @@ public class JavaHBaseContextSuite implements Serializable {
       }
       return b.toString();
     }
+  }
+
+  public static class DeleteFunction implements Function<byte[], Delete> {
+
+    private static final long serialVersionUID = 1L;
+
+    public Delete call(byte[] v) throws Exception {
+
+      return new Delete(v);
+    }
+
+  }
+
+  public static class IncrementFunction implements Function<String, Increment> {
+
+    private static final long serialVersionUID = 1L;
+
+    public Increment call(String v) throws Exception {
+      String[] cells = v.split(",");
+      Increment increment = new Increment(Bytes.toBytes(cells[0]));
+
+      increment.addColumn(Bytes.toBytes(cells[1]), Bytes.toBytes(cells[2]),
+          Integer.parseInt(cells[3]));
+      return increment;
+    }
+
   }
 
 }
